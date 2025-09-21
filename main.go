@@ -11,10 +11,10 @@ import (
 	"tyrattribution/config"
 	"tyrattribution/consumer"
 	"tyrattribution/database"
-	"tyrattribution/handler"
 	"tyrattribution/publisher"
 	"tyrattribution/redis"
 	"tyrattribution/repository"
+	"tyrattribution/routes"
 	"tyrattribution/service"
 )
 
@@ -24,12 +24,12 @@ func main() {
 		log.Fatalf("Failed to load config: %v", err)
 	}
 
-	db, err := database.OpenDatabase()
+	db, err := database.OpenDatabase(cfg)
 	if err != nil {
 		log.Fatalf("Failed to connect to database: %v", err)
 	}
 
-	redisClient, err := redis.NewClient()
+	redisClient, err := redis.NewClient(cfg)
 	if err != nil {
 		log.Fatalf("Failed to connect to Redis: %v", err)
 	}
@@ -38,36 +38,36 @@ func main() {
 	conversionEventRepo := repository.NewConversionEventRepository(db)
 	campaignRepo := repository.NewCampaignRepository(db)
 	campaignJournalRepo := repository.NewCampaignJournalRepository(db)
+	campaignStatsRepo := repository.NewCampaignStatisticsRepository(db)
 
 	clickEventService := service.NewClickEventService(clickEventRepo, redisClient)
 	conversionEventService := service.NewConversionEventService(conversionEventRepo, clickEventService, redisClient, cfg)
-	campaignJournalService := service.NewCampaignJournalService(campaignJournalRepo, campaignRepo, clickEventRepo, conversionEventRepo, redisClient, db)
-	campaignStatisticsService := service.NewCampaignStatisticsService(campaignJournalRepo, redisClient, db)
-	clickEventPublisher, err := publisher.NewClickEventPublisher()
+	campaignJournalService := service.NewCampaignJournalService(campaignJournalRepo, campaignRepo, clickEventRepo, conversionEventRepo, redisClient)
+	campaignStatisticsService := service.NewCampaignStatisticsService(campaignJournalRepo, campaignStatsRepo, redisClient)
+
+	clickEventPublisher, err := publisher.NewClickEventPublisher(cfg)
 	if err != nil {
 		log.Fatalf("Failed to create click event publisher: %v", err)
 	}
 
-	conversionEventPublisher, err := publisher.NewConversionEventPublisher()
+	conversionEventPublisher, err := publisher.NewConversionEventPublisher(cfg)
 	if err != nil {
 		log.Fatalf("Failed to create conversion event publisher: %v", err)
 	}
 
-	mux := handler.SetupRoutes(clickEventPublisher, conversionEventPublisher, campaignJournalService, campaignStatisticsService)
+	mux := routes.SetupRoutes(clickEventPublisher, conversionEventPublisher, campaignJournalService, campaignStatisticsService)
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	go consumer.StartClickEventConsumer(ctx, clickEventService)
-	go consumer.StartConversionEventConsumer(ctx, conversionEventService)
+	go consumer.StartClickEventConsumer(ctx, cfg, clickEventService)
+	go consumer.StartConversionEventConsumer(ctx, cfg, conversionEventService)
 
-	// Create HTTP server
 	server := &http.Server{
 		Addr:    ":8080",
 		Handler: mux,
 	}
 
-	// Start server in goroutine
 	go func() {
 		log.Println("Server starting on :8080")
 		if err := server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
@@ -75,7 +75,6 @@ func main() {
 		}
 	}()
 
-	// Wait for interrupt signal to gracefully shutdown
 	quit := make(chan os.Signal, 1)
 	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
 	<-quit

@@ -11,13 +11,6 @@ type CampaignStatisticsService interface {
 	GetCampaignStatistics(ctx context.Context, campaignID uuid.UUID, groupBy string) (*CampaignStatisticsResponse, error)
 }
 
-type GroupBy string
-
-const (
-	GroupByDaily   GroupBy = "daily"
-	GroupByWeekly  GroupBy = "weekly"
-	GroupByMonthly GroupBy = "monthly"
-)
 
 type CampaignStatisticsResponse struct {
 	CampaignID string                       `json:"campaign_id"`

@@ -5,7 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"log"
-	"os"
+	"tyrattribution/config"
 
 	"tyrattribution/entity"
 	"tyrattribution/publisher"
@@ -22,14 +22,14 @@ type ClickEventConsumer struct {
 
 type ClickEventMessage = publisher.ClickEvent
 
-func NewClickEventConsumer(svc service.ClickEventService) (*ClickEventConsumer, error) {
-	brokerURL := os.Getenv("KAFKA_BROKER_URL")
-	topic := os.Getenv("KAFKA_CLICK_EVENT_TOPIC")
-	groupID := "click-event-consumer-group"
+func NewClickEventConsumer(cfg *config.Config, svc service.ClickEventService) (*ClickEventConsumer, error) {
+	brokerURL := cfg.KafkaUrl
+	topic := cfg.KafkaClickTopic
+	groupID := "tyr"
 
 	config := sarama.NewConfig()
 	config.Consumer.Group.Rebalance.Strategy = sarama.BalanceStrategyRoundRobin
-	config.Consumer.Offsets.Initial = sarama.OffsetOldest
+	config.Consumer.Offsets.Initial = sarama.OffsetNewest
 	config.Consumer.Return.Errors = true
 
 	consumer, err := sarama.NewConsumerGroup([]string{brokerURL}, groupID, config)
@@ -92,10 +92,8 @@ func (h *clickEventHandler) ConsumeClaim(session sarama.ConsumerGroupSession, cl
 
 			if err := h.saveClickEventToDB(eventMsg); err != nil {
 				log.Printf("Error saving click event to database: %v", err)
-				continue
 			}
 
-			log.Printf("Click event saved to database: %s", eventMsg.ClickID.String())
 			session.MarkMessage(message, "")
 
 		case <-session.Context().Done():
@@ -117,8 +115,8 @@ func (h *clickEventHandler) saveClickEventToDB(eventMsg ClickEventMessage) error
 	return h.service.CreateClickEvent(context.Background(), clickEvent)
 }
 
-func StartClickEventConsumer(ctx context.Context, svc service.ClickEventService) {
-	consumer, err := NewClickEventConsumer(svc)
+func StartClickEventConsumer(ctx context.Context, cfg *config.Config, svc service.ClickEventService) {
+	consumer, err := NewClickEventConsumer(cfg, svc)
 	if err != nil {
 		log.Fatalf("Failed to create click event consumer: %v", err)
 	}

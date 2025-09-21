@@ -7,12 +7,13 @@ import (
 	"strconv"
 	"time"
 
-	"github.com/google/uuid"
-	"github.com/shopspring/decimal"
-	"gorm.io/gorm"
 	"tyrattribution/entity"
 	"tyrattribution/redis"
 	"tyrattribution/repository"
+
+	"github.com/google/uuid"
+	"github.com/shopspring/decimal"
+	"gorm.io/gorm"
 )
 
 type CampaignJournalServiceImpl struct {
@@ -21,7 +22,6 @@ type CampaignJournalServiceImpl struct {
 	clickEventRepo      repository.ClickEventRepository
 	conversionEventRepo repository.ConversionEventRepository
 	redisClient         redis.Client
-	db                  *gorm.DB
 }
 
 func NewCampaignJournalService(
@@ -30,7 +30,6 @@ func NewCampaignJournalService(
 	clickEventRepo repository.ClickEventRepository,
 	conversionEventRepo repository.ConversionEventRepository,
 	redisClient redis.Client,
-	db *gorm.DB,
 ) CampaignJournalService {
 	return &CampaignJournalServiceImpl{
 		campaignJournalRepo: campaignJournalRepo,
@@ -38,7 +37,6 @@ func NewCampaignJournalService(
 		clickEventRepo:      clickEventRepo,
 		conversionEventRepo: conversionEventRepo,
 		redisClient:         redisClient,
-		db:                  db,
 	}
 }
 
@@ -91,12 +89,12 @@ func (s *CampaignJournalServiceImpl) processCampaignMetrics(ctx context.Context,
 	dateOnly := time.Date(date.Year(), date.Month(), date.Day(), 0, 0, 0, 0, date.Location())
 
 	campaignJournal := &entity.CampaignJournal{
-		CampaignID:              campaignID,
-		Date:                    dateOnly,
-		NumberOfClick:           &clickCount,
-		NumberOfConversion:      &conversionCount,
-		TotalConversionValue:    &totalConversionValue,
-		CreatedAt:               time.Now(),
+		CampaignID:           campaignID,
+		Date:                 dateOnly,
+		NumberOfClick:        &clickCount,
+		NumberOfConversion:   &conversionCount,
+		TotalConversionValue: &totalConversionValue,
+		CreatedAt:            time.Now(),
 	}
 
 	existingJournal, err := s.campaignJournalRepo.GetByCampaignAndDate(ctx, campaignID, dateOnly)
@@ -181,13 +179,7 @@ func (s *CampaignJournalServiceImpl) getConversionCountFromRedis(ctx context.Con
 }
 
 func (s *CampaignJournalServiceImpl) getTotalConversionValueFromDB(ctx context.Context, campaignID uuid.UUID, date string) (decimal.Decimal, error) {
-	var totalValue decimal.Decimal
-
-	err := s.db.WithContext(ctx).
-		Model(&entity.ConversionEvent{}).
-		Select("COALESCE(SUM(value), 0)").
-		Where("campaign_id = ? AND DATE(conversion_date) = ? AND click_id IS NOT NULL", campaignID, date).
-		Scan(&totalValue).Error
+	totalValue, err := s.conversionEventRepo.GetTotalConversionValue(ctx, campaignID, date)
 
 	if err != nil {
 		return decimal.Zero, err

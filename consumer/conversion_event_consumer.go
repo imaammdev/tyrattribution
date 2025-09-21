@@ -5,7 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"log"
-	"os"
+	"tyrattribution/config"
 	"tyrattribution/entity"
 	"tyrattribution/publisher"
 	"tyrattribution/service"
@@ -21,14 +21,14 @@ type ConversionEventConsumer struct {
 
 type ConversionEventMessage = publisher.ConversionEvent
 
-func NewConversionEventConsumer(svc service.ConversionEventService) (*ConversionEventConsumer, error) {
-	brokerURL := os.Getenv("KAFKA_BROKER_URL")
-	topic := os.Getenv("KAFKA_CONVERSION_EVENT_TOPIC")
-	groupID := "conversion-event-consumer-group"
+func NewConversionEventConsumer(cfg *config.Config, svc service.ConversionEventService) (*ConversionEventConsumer, error) {
+	brokerURL := cfg.KafkaUrl
+	topic := cfg.KafkaConversionTopic
+	groupID := "tyr"
 
 	config := sarama.NewConfig()
 	config.Consumer.Group.Rebalance.Strategy = sarama.BalanceStrategyRoundRobin
-	config.Consumer.Offsets.Initial = sarama.OffsetOldest
+	config.Consumer.Offsets.Initial = sarama.OffsetNewest
 	config.Consumer.Return.Errors = true
 
 	consumer, err := sarama.NewConsumerGroup([]string{brokerURL}, groupID, config)
@@ -91,10 +91,7 @@ func (h *conversionEventHandler) ConsumeClaim(session sarama.ConsumerGroupSessio
 
 			if err := h.saveConversionEventToDB(eventMsg); err != nil {
 				log.Printf("Error saving conversion event to database: %v", err)
-				continue
 			}
-
-			log.Printf("Conversion event saved to database: %s", eventMsg.ConversionID.String())
 			session.MarkMessage(message, "")
 
 		case <-session.Context().Done():
@@ -118,8 +115,8 @@ func (h *conversionEventHandler) saveConversionEventToDB(eventMsg ConversionEven
 	return h.service.CreateConversionEvent(context.Background(), conversionEvent)
 }
 
-func StartConversionEventConsumer(ctx context.Context, svc service.ConversionEventService) {
-	consumer, err := NewConversionEventConsumer(svc)
+func StartConversionEventConsumer(ctx context.Context, cfg *config.Config, svc service.ConversionEventService) {
+	consumer, err := NewConversionEventConsumer(cfg, svc)
 	if err != nil {
 		log.Fatalf("Failed to create conversion event consumer: %v", err)
 	}

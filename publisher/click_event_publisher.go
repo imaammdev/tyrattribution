@@ -4,8 +4,8 @@ import (
 	"encoding/json"
 	"fmt"
 	"log"
-	"os"
 	"time"
+	"tyrattribution/config"
 
 	"github.com/IBM/sarama"
 	"github.com/google/uuid"
@@ -25,9 +25,9 @@ type ClickEvent struct {
 	CreatedAt  time.Time `json:"created_at"`
 }
 
-func NewClickEventPublisher() (*ClickEventPublisher, error) {
-	brokerURL := os.Getenv("KAFKA_BROKER_URL")
-	topic := os.Getenv("KAFKA_CLICK_EVENT_TOPIC")
+func NewClickEventPublisher(cfg *config.Config) (*ClickEventPublisher, error) {
+	brokerURL := cfg.KafkaUrl
+	topic := cfg.KafkaClickTopic
 
 	config := sarama.NewConfig()
 	config.Producer.Return.Successes = true

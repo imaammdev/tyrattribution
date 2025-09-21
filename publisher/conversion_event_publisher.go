@@ -4,8 +4,8 @@ import (
 	"encoding/json"
 	"fmt"
 	"log"
-	"os"
 	"time"
+	"tyrattribution/config"
 
 	"github.com/IBM/sarama"
 	"github.com/google/uuid"
@@ -28,9 +28,9 @@ type ConversionEvent struct {
 	CreatedAt      time.Time        `json:"created_at"`
 }
 
-func NewConversionEventPublisher() (*ConversionEventPublisher, error) {
-	brokerURL := os.Getenv("KAFKA_BROKER_URL")
-	topic := os.Getenv("KAFKA_CONVERSION_EVENT_TOPIC")
+func NewConversionEventPublisher(cfg *config.Config) (*ConversionEventPublisher, error) {
+	brokerURL := cfg.KafkaUrl
+	topic := cfg.KafkaConversionTopic
 
 	config := sarama.NewConfig()
 	config.Producer.Return.Successes = true

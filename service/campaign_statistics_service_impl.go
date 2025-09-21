@@ -7,53 +7,52 @@ import (
 	"strconv"
 	"time"
 
-	"github.com/google/uuid"
-	"github.com/shopspring/decimal"
-	"gorm.io/gorm"
-	"tyrattribution/entity"
 	"tyrattribution/redis"
 	"tyrattribution/repository"
+
+	"github.com/google/uuid"
+	"github.com/shopspring/decimal"
 )
 
 type CampaignStatisticsServiceImpl struct {
 	campaignJournalRepo repository.CampaignJournalRepository
+	campaignStatsRepo   repository.CampaignStatisticsRepository
 	redisClient         redis.Client
-	db                  *gorm.DB
 }
 
 func NewCampaignStatisticsService(
 	campaignJournalRepo repository.CampaignJournalRepository,
+	campaignStatsRepo repository.CampaignStatisticsRepository,
 	redisClient redis.Client,
-	db *gorm.DB,
 ) CampaignStatisticsService {
 	return &CampaignStatisticsServiceImpl{
 		campaignJournalRepo: campaignJournalRepo,
+		campaignStatsRepo:   campaignStatsRepo,
 		redisClient:         redisClient,
-		db:                  db,
 	}
 }
 
 func (s *CampaignStatisticsServiceImpl) GetCampaignStatistics(ctx context.Context, campaignID uuid.UUID, groupBy string) (*CampaignStatisticsResponse, error) {
-	var groupByType GroupBy
+	var groupByType repository.GroupBy
 	switch groupBy {
-	case string(GroupByDaily):
-		groupByType = GroupByDaily
-	case string(GroupByWeekly):
-		groupByType = GroupByWeekly
-	case string(GroupByMonthly):
-		groupByType = GroupByMonthly
+	case string(repository.GroupByDaily):
+		groupByType = repository.GroupByDaily
+	case string(repository.GroupByWeekly):
+		groupByType = repository.GroupByWeekly
+	case string(repository.GroupByMonthly):
+		groupByType = repository.GroupByMonthly
 	default:
 		return nil, fmt.Errorf("invalid groupBy parameter: %s. Must be daily, weekly, or monthly", groupBy)
 	}
 
-	historicalData, err := s.getHistoricalData(ctx, campaignID, groupByType)
+	historicalData, err := s.campaignStatsRepo.GetHistoricalData(ctx, campaignID, groupByType)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get historical data: %w", err)
 	}
 
 	var todayData *CampaignStatisticsDataItem
 	// Only include today's data for daily reports
-	if groupByType == GroupByDaily {
+	if groupByType == repository.GroupByDaily {
 		todayData, err = s.getTodayData(ctx, campaignID)
 		if err != nil {
 			log.Printf("Failed to get today's data from Redis: %v", err)
@@ -61,99 +60,16 @@ func (s *CampaignStatisticsServiceImpl) GetCampaignStatistics(ctx context.Contex
 		}
 	}
 
-	combinedData := s.combineData(historicalData, todayData, groupByType)
+	// Convert repository data to service data
+	serviceHistoricalData := s.convertToServiceData(historicalData)
+
+	combinedData := s.combineData(serviceHistoricalData, todayData, groupByType)
 
 	return &CampaignStatisticsResponse{
 		CampaignID: campaignID.String(),
 		GroupBy:    groupBy,
 		Data:       combinedData,
 	}, nil
-}
-
-func (s *CampaignStatisticsServiceImpl) getHistoricalData(ctx context.Context, campaignID uuid.UUID, groupBy GroupBy) ([]CampaignStatisticsDataItem, error) {
-	var results []CampaignStatisticsDataItem
-
-	var rows *gorm.DB
-
-	switch groupBy {
-	case GroupByDaily:
-		rows = s.db.WithContext(ctx).
-			Model(&entity.CampaignJournal{}).
-			Select(`
-				date as period,
-				COALESCE(number_of_click, 0) as total_clicks,
-				COALESCE(number_of_conversion, 0) as total_conversions,
-				COALESCE(total_conversion_value, 0) as total_value
-			`).
-			Where("campaign_id = ? AND date < ?", campaignID, time.Now().Format("2006-01-02")).
-			Order("date DESC").
-			Limit(30) // Last 30 days
-
-	case GroupByWeekly:
-		rows = s.db.WithContext(ctx).
-			Model(&entity.CampaignJournal{}).
-			Select(`
-				TO_CHAR(DATE_TRUNC('week', date), 'YYYY-MM-DD') as period,
-				SUM(COALESCE(number_of_click, 0)) as total_clicks,
-				SUM(COALESCE(number_of_conversion, 0)) as total_conversions,
-				SUM(COALESCE(total_conversion_value, 0)) as total_value
-			`).
-			Where("campaign_id = ? AND date < ? AND date IS NOT NULL", campaignID, time.Now().Format("2006-01-02")).
-			Group("DATE_TRUNC('week', date)").
-			Having("DATE_TRUNC('week', date) IS NOT NULL").
-			Order("DATE_TRUNC('week', date) DESC").
-			Limit(12) // Last 12 weeks
-
-	case GroupByMonthly:
-		rows = s.db.WithContext(ctx).
-			Model(&entity.CampaignJournal{}).
-			Select(`
-				TO_CHAR(DATE_TRUNC('month', date), 'YYYY-MM') as period,
-				SUM(COALESCE(number_of_click, 0)) as total_clicks,
-				SUM(COALESCE(number_of_conversion, 0)) as total_conversions,
-				SUM(COALESCE(total_conversion_value, 0)) as total_value
-			`).
-			Where("campaign_id = ? AND date < ? AND date IS NOT NULL", campaignID, time.Now().Format("2006-01-02")).
-			Group("DATE_TRUNC('month', date)").
-			Having("DATE_TRUNC('month', date) IS NOT NULL").
-			Order("DATE_TRUNC('month', date) DESC").
-			Limit(12) // Last 12 months
-	}
-
-	type QueryResult struct {
-		Period           *string         `json:"period"`
-		TotalClicks      int64           `json:"total_clicks"`
-		TotalConversions int64           `json:"total_conversions"`
-		TotalValue       decimal.Decimal `json:"total_value"`
-	}
-
-	var queryResults []QueryResult
-	if err := rows.Scan(&queryResults).Error; err != nil {
-		return nil, err
-	}
-
-	for _, result := range queryResults {
-		var periodStr string
-
-		if result.Period == nil {
-			log.Printf("Warning: Period is nil for result with clicks: %d, conversions: %d", result.TotalClicks, result.TotalConversions)
-			continue // Skip entries with nil periods
-		}
-
-		periodStr = *result.Period
-
-		conversionRate := s.calculateConversionRate(result.TotalClicks, result.TotalConversions)
-
-		results = append(results, CampaignStatisticsDataItem{
-			Period:           periodStr,
-			TotalClicks:      result.TotalClicks,
-			TotalConversions: result.TotalConversions,
-			TotalValue:       result.TotalValue,
-			ConversionRate:   conversionRate,
-		})
-	}
-
-	return results, nil
 }
 
 func (s *CampaignStatisticsServiceImpl) getTodayData(ctx context.Context, campaignID uuid.UUID) (*CampaignStatisticsDataItem, error) {
@@ -177,13 +93,7 @@ func (s *CampaignStatisticsServiceImpl) getTodayData(ctx context.Context, campai
 		}
 	}
 
-	var totalValue decimal.Decimal
-	err = s.db.WithContext(ctx).
-		Model(&entity.ConversionEvent{}).
-		Select("COALESCE(SUM(value), 0)").
-		Where("campaign_id = ? AND DATE(conversion_date) = ? AND click_id IS NOT NULL", campaignID, today).
-		Scan(&totalValue).Error
-
+	totalValue, err := s.campaignStatsRepo.GetTodayConversionValue(ctx, campaignID, time.Now())
 	if err != nil {
 		log.Printf("Failed to get today's total conversion value: %v", err)
 		totalValue = decimal.Zero
@@ -200,20 +110,35 @@ func (s *CampaignStatisticsServiceImpl) getTodayData(ctx context.Context, campai
 	}, nil
 }
 
-func (s *CampaignStatisticsServiceImpl) combineData(historical []CampaignStatisticsDataItem, today *CampaignStatisticsDataItem, groupBy GroupBy) []CampaignStatisticsDataItem {
+func (s *CampaignStatisticsServiceImpl) convertToServiceData(repoData []repository.CampaignStatisticsData) []CampaignStatisticsDataItem {
+	var result []CampaignStatisticsDataItem
+	for _, data := range repoData {
+		conversionRate := s.calculateConversionRate(data.TotalClicks, data.TotalConversions)
+		result = append(result, CampaignStatisticsDataItem{
+			Period:           data.Period,
+			TotalClicks:      data.TotalClicks,
+			TotalConversions: data.TotalConversions,
+			TotalValue:       data.TotalValue,
+			ConversionRate:   conversionRate,
+		})
+	}
+	return result
+}
+
+func (s *CampaignStatisticsServiceImpl) combineData(historical []CampaignStatisticsDataItem, today *CampaignStatisticsDataItem, groupBy repository.GroupBy) []CampaignStatisticsDataItem {
 	if today == nil || (today.TotalClicks == 0 && today.TotalConversions == 0) {
 		return historical
 	}
 
 	var todayPeriod string
 	switch groupBy {
-	case GroupByDaily:
+	case repository.GroupByDaily:
 		todayPeriod = time.Now().Format("2006-01-02")
-	case GroupByWeekly:
+	case repository.GroupByWeekly:
 		now := time.Now()
 		weekStart := now.AddDate(0, 0, -int(now.Weekday())+1)
 		todayPeriod = weekStart.Format("2006-01-02")
-	case GroupByMonthly:
+	case repository.GroupByMonthly:
 		todayPeriod = time.Now().Format("2006-01")
 	}
 
@@ -244,13 +169,13 @@ func (s *CampaignStatisticsServiceImpl) combineData(historical []CampaignStatist
 	return historical
 }
 
-func (s *CampaignStatisticsServiceImpl) formatPeriod(period time.Time, groupBy GroupBy) string {
+func (s *CampaignStatisticsServiceImpl) formatPeriod(period time.Time, groupBy repository.GroupBy) string {
 	switch groupBy {
-	case GroupByDaily:
+	case repository.GroupByDaily:
 		return period.Format("2006-01-02")
-	case GroupByWeekly:
+	case repository.GroupByWeekly:
 		return period.Format("2006-01-02") // Week start date
-	case GroupByMonthly:
+	case repository.GroupByMonthly:
 		return period.Format("2006-01")
 	default:
 		return period.Format("2006-01-02")

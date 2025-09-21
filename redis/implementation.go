@@ -3,9 +3,9 @@ package redis
 import (
 	"context"
 	"fmt"
-	"os"
 	"strconv"
 	"time"
+	"tyrattribution/config"
 
 	"github.com/redis/go-redis/v9"
 )
@@ -14,10 +14,10 @@ type ClientWrapper struct {
 	client *redis.Client
 }
 
-func NewClient() (Client, error) {
-	redisURL := os.Getenv("REDIS_URL")
-	redisPassword := os.Getenv("REDIS_PASSWORD")
-	redisDBStr := os.Getenv("REDIS_DB")
+func NewClient(cfg *config.Config) (Client, error) {
+	redisURL := cfg.REDISURL
+	redisPassword := cfg.REDISPassword
+	redisDBStr := cfg.REDISDBStr
 
 	redisDB, err := strconv.Atoi(redisDBStr)
 	if err != nil {

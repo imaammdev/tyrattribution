@@ -4,9 +4,10 @@ import (
 	"context"
 	"time"
 
+	"tyrattribution/entity"
+
 	"github.com/google/uuid"
 	"gorm.io/gorm"
-	"tyrattribution/entity"
 )
 
 type campaignJournalRepository struct {
