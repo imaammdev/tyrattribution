@@ -1,0 +1,113 @@
+### Create Click Event (Auto-generated ID)
+POST http://localhost:8080/api/clicks
+Content-Type: application/json
+
+{
+  "campaign_id": "550e8400-e29b-41d4-a716-446655440000",
+  "user_id": "550e8400-e29b-41d4-a716-446655440001",
+  "click_date": "2025-09-21T00:30:00Z",
+  "source": "google"
+}
+
+###
+
+### Create Conversion Event (Auto-generated ID)
+POST http://localhost:8080/api/conversions
+Content-Type: application/json
+
+{
+  "user_id": "550e8400-e29b-41d4-a716-446655440001",
+  "campaign_id": "550e8400-e29b-41d4-a716-446655440000",
+  "conversion_date": "2025-09-21T00:34:00Z",
+  "value": 99.99,
+  "type": "purchase",
+  "source": "google"
+}
+
+### Create Click Event (With Custom ID)
+POST http://localhost:8080/api/clicks
+Content-Type: application/json
+
+{
+  "click_id": "123e4567-e89b-12d3-a456-426614174000",
+  "campaign_id": "550e8400-e29b-41d4-a716-446655440000",
+  "user_id": "550e8400-e29b-41d4-a716-446655440001",
+  "click_date": "2024-01-15T10:35:00Z",
+  "source": "google"
+}
+
+###
+
+
+
+###
+
+### Create Conversion Event (With Custom ID)
+POST http://localhost:8080/api/conversions
+Content-Type: application/json
+
+{
+  "conversion_id": "550e8400-e29b-41d4-a716-446655440001",
+  "user_id": "550e8400-e29b-41d4-a716-446655440001",
+  "campaign_id": "550e8400-e29b-41d4-a716-446655440000",
+  "conversion_date": "2025-09-21T00:36:00Z",
+  "value": 149.99,
+  "type": "purchase",
+  "source": "google"
+}
+
+###
+
+### Create Click Event with Current Time
+POST http://localhost:8080/api/clicks
+Content-Type: application/json
+
+{
+  "campaign_id": "550e8400-e29b-41d4-a716-446655440002",
+  "user_id": "550e8400-e29b-41d4-a716-446655440003",
+  "click_date": "2024-09-20T14:30:00Z",
+  "source": "facebook"
+}
+
+###
+
+### Create Conversion Event with Zero Value
+POST http://localhost:8080/api/conversions
+Content-Type: application/json
+
+{
+  "user_id": "550e8400-e29b-41d4-a716-446655440003",
+  "campaign_id": "550e8400-e29b-41d4-a716-446655440002",
+  "conversion_date": "2024-09-20T15:00:00Z",
+  "value": 0,
+  "type": "signup",
+  "source": "facebook"
+}
+
+###
+
+### Calculate Yesterday Metrics (Campaign Journal)
+POST http://localhost:8080/api/calculate-yesterday-metrics
+Content-Type: application/json
+
+###
+
+### Get Campaign Statistics (Daily)
+GET http://localhost:8080/api/campaign-statistics?campaign_id=550e8400-e29b-41d4-a716-446655440000&group_by=daily
+
+###
+
+### Get Campaign Statistics (Weekly)
+GET http://localhost:8080/api/campaign-statistics?campaign_id=550e8400-e29b-41d4-a716-446655440000&group_by=weekly
+
+###
+
+### Get Campaign Statistics (Monthly)
+GET http://localhost:8080/api/campaign-statistics?campaign_id=550e8400-e29b-41d4-a716-446655440000&group_by=monthly
+
+###
+
+### Get Campaign Statistics (Default - Daily)
+GET http://localhost:8080/api/campaign-statistics?campaign_id=550e8400-e29b-41d4-a716-446655440000
+
+###
